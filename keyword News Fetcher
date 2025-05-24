@@ -1,0 +1,36 @@
+// fetchNewsFromKeyword.js
+// Utility to fetch top news article content from NewsAPI.org for a given keyword
+
+const axios = require('axios');
+
+const NEWS_API_KEY = '0bc0cd6aa8e3454fbe05facceec2b331';
+
+async function fetchNewsFromKeyword(keyword) {
+  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(keyword)}&language=en&pageSize=1&sortBy=publishedAt&apiKey=${NEWS_API_KEY}`;
+
+  try {
+    const response = await axios.get(url);
+    const articles = response.data.articles;
+    if (!articles.length) {
+      throw new Error('No articles found for keyword');
+    }
+
+    const article = articles[0];
+    const content = [
+      `Title: ${article.title}`,
+      `Source: ${article.source.name}`,
+      `Author: ${article.author || 'Unknown'}`,
+      `Published: ${article.publishedAt}`,
+      '',
+      `${article.description || ''}`,
+      `${article.content || ''}`
+    ].join('\n');
+
+    return content;
+  } catch (error) {
+    console.error('Error fetching news:', error.message);
+    throw new Error('Unable to retrieve article from keyword');
+  }
+}
+
+module.exports = { fetchNewsFromKeyword };
