@@ -1,0 +1,68 @@
+// This is a mock backend summarization handler using Node.js + Express (can adapt to Next.js API route or Python FastAPI if needed)
+
+const express = require('express');
+const multer = require('multer');
+const axios = require('axios');
+const app = express();
+const port = 3001;
+
+app.use(express.json());
+const upload = multer();
+
+// Helper to call OpenAI or any other LLM API
+async function summarizeInput(inputText, length) {
+  const instructions = `Please summarize the following content into a Burmese news script with a ${length} duration. 
+Keep a friendly but realistic tone, and strictly avoid adding new facts. Format as a news script.`;
+
+  const prompt = `${instructions}\n\nContent:\n${inputText}`;
+
+  const response = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: 'You are a Burmese news script writer.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  return response.data.choices[0].message.content;
+}
+
+app.post('/api/generate-script', upload.none(), async (req, res) => {
+  const { inputType, inputValue, length } = req.body;
+
+  let contentToSummarize = '';
+  try {
+    if (inputType === 'keyword') {
+      // Later: Hook up a news API to get related articles from keyword
+      contentToSummarize = `News related to keyword: ${inputValue}`;
+    } else if (inputType === 'url') {
+      const response = await axios.get(inputValue);
+      const html = response.data;
+      // Use readability lib or strip HTML to get clean content
+      contentToSummarize = html.replace(/<[^>]*>/g, '').slice(0, 5000);
+    } else if (inputType === 'file') {
+      // Assuming file parsing happens before, or use req.file to parse text
+      contentToSummarize = inputValue; // Already parsed text
+    }
+
+    const script = await summarizeInput(contentToSummarize, length);
+    res.json({ script });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to generate script' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`News Script Generator API listening at http://localhost:${port}`);
+});
