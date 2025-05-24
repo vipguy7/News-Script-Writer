@@ -1,36 +1,69 @@
-// fetchNewsFromKeyword.js
-// Utility to fetch top news article content from NewsAPI.org for a given keyword
+// Updated News Script Generator API with file and keyword parsing
 
+const express = require('express');
+const multer = require('multer');
 const axios = require('axios');
+const { parseFile } = require('./file_parsing_utils');
+const { fetchNewsFromKeyword } = require('./fetchNewsFromKeyword');
+const app = express();
+const port = 3001;
 
-const NEWS_API_KEY = '0bc0cd6aa8e3454fbe05facceec2b331';
+app.use(express.json());
+const upload = multer();
 
-async function fetchNewsFromKeyword(keyword) {
-  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(keyword)}&language=en&pageSize=1&sortBy=publishedAt&apiKey=${NEWS_API_KEY}`;
+// Helper to call OpenAI or any other LLM API
+async function summarizeInput(inputText, length) {
+  const instructions = `Please summarize the following content into a Burmese news script with a ${length} duration.\nKeep a friendly but realistic tone, and strictly avoid adding new facts. Format as a news script.`;
 
-  try {
-    const response = await axios.get(url);
-    const articles = response.data.articles;
-    if (!articles.length) {
-      throw new Error('No articles found for keyword');
+  const prompt = `${instructions}\n\nContent:\n${inputText}`;
+
+  const response = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: 'You are a Burmese news script writer.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
     }
+  );
 
-    const article = articles[0];
-    const content = [
-      `Title: ${article.title}`,
-      `Source: ${article.source.name}`,
-      `Author: ${article.author || 'Unknown'}`,
-      `Published: ${article.publishedAt}`,
-      '',
-      `${article.description || ''}`,
-      `${article.content || ''}`
-    ].join('\n');
-
-    return content;
-  } catch (error) {
-    console.error('Error fetching news:', error.message);
-    throw new Error('Unable to retrieve article from keyword');
-  }
+  return response.data.choices[0].message.content;
 }
 
-module.exports = { fetchNewsFromKeyword };
+app.post('/api/generate-script', upload.single('file'), async (req, res) => {
+  const { inputType, inputValue, length } = req.body;
+  let contentToSummarize = '';
+
+  try {
+    if (inputType === 'keyword') {
+      contentToSummarize = await fetchNewsFromKeyword(inputValue);
+    } else if (inputType === 'url') {
+      const response = await axios.get(inputValue);
+      const html = response.data;
+      contentToSummarize = html.replace(/<[^>]*>/g, '').slice(0, 5000);
+    } else if (inputType === 'file') {
+      if (!req.file) {
+        return res.status(400).json({ error: 'File upload required' });
+      }
+      contentToSummarize = await parseFile(req.file);
+    }
+
+    const script = await summarizeInput(contentToSummarize, length);
+    res.json({ script });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to generate script' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`News Script Generator API listening at http://localhost:${port}`);
+});
